@@ -1,0 +1,43 @@
+{
+  "entity": "event",
+  "account_id": "acc_mock_123",
+  "event": "payment.failed",
+  "contains": [
+    "payment"
+  ],
+  "payload": {
+    "payment": {
+      "entity": {
+        "id": "pay_failed_123",
+        "entity": "payment",
+        "amount": 50000,
+        "currency": "INR",
+        "status": "failed",
+        "order_id": "order_failed_123",
+        "invoice_id": null,
+        "international": false,
+        "method": "card",
+        "amount_refunded": 0,
+        "refund_status": null,
+        "captured": false,
+        "description": "Mock failed payment",
+        "card_id": "card_mock_456",
+        "bank": null,
+        "wallet": null,
+        "vpa": null,
+        "email": "customer@example.com",
+        "contact": "+919999999999",
+        "notes": [],
+        "fee": null,
+        "tax": null,
+        "error_code": "BAD_REQUEST_ERROR",
+        "error_description": "Payment failed due to incorrect OTP.",
+        "error_source": "customer",
+        "error_step": "payment_authentication",
+        "error_reason": "payment_failed_incorrect_otp",
+        "created_at": 1672531199
+      }
+    }
+  },
+  "created_at": 1672531199
+}

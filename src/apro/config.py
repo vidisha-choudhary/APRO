@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     APP_PORT: int = Field(default=8000)
     LOG_LEVEL: str = Field(default="INFO")
 
+    # Razorpay Webhook Configuration (Phase 01)
+    RAZORPAY_WEBHOOK_SECRET: str | None = Field(default=None)
+
     # Settings configuration
     model_config = SettingsConfigDict(
         env_file=".env",

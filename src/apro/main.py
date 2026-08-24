@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI
 
 from apro.config import settings
+from apro.webhooks.razorpay import router as razorpay_router
 
 # Initialize logging using the configured LOG_LEVEL
 logging.basicConfig(
@@ -21,6 +22,9 @@ app = FastAPI(
     description="APRO backend service engineering foundation",
     version="0.1.0",
 )
+
+# Include webhook routers
+app.include_router(razorpay_router)
 
 
 @app.get("/health")
