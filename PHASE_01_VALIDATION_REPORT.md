@@ -39,11 +39,14 @@ None (strictly used python standard library `hmac` and `hashlib` for signature c
 TEST MODE:
 PASS (All verification tests utilize standard Test Mode structures; no Live Mode credentials were used)
 
-PAYMENT FAILURE REPRODUCED:
+LOCAL PAYMENT.FAILED SIMULATION:
 PASS (Controlled payment failures successfully verified via local `simulate_webhook.py` and mock fixtures)
 
-PAYMENT.FAILED RECEIVED:
-PASS (FastAPI endpoint successfully receives and validates `payment.failed` payloads)
+LIVE RAZORPAY TEST MODE PAYMENT FAILURE:
+BLOCKED (Requires active Razorpay Test Mode dashboard access and tunneling tool installation)
+
+LIVE RAZORPAY WEBHOOK EVIDENCE:
+MISSING (No actual Test Mode webhook has reached the local endpoint yet)
 
 RAW BODY CAPTURE:
 PASS (Endpoint captures raw request body using `await request.body()` before parsing)
@@ -64,7 +67,7 @@ EVENT ID:
 PASS (`X-Razorpay-Event-Id` is captured from headers)
 
 DUPLICATE DETECTION:
-PASS (Classifies first event ID delivery as `NEW` and subsequent identical IDs as `DUPLICATE`)
+PASS (Classifies first event ID delivery as `NEW` and subsequent identical IDs as `DUPLICATE` in-memory)
 
 PAYMENT ID:
 PASS (Extracted successfully from payload)
@@ -82,7 +85,7 @@ PYTEST:
 PASS (30 tests pass)
 
 RUFF:
-PASS (Unified formatter and linter checks pass cleanly)
+PASS (Formatter and linter checks pass cleanly)
 
 MYPY:
 PASS (Strict static type checker checks pass cleanly)
@@ -94,7 +97,7 @@ LIVE RAZORPAY EVIDENCE:
 MISSING (Tunnel setup blocked)
 
 TUNNEL METHOD:
-N/A (No tunnel software `zrok` or `ngrok` is installed on host system)
+N/A (No tunnel software `zrok` is installed on host system)
 
 RAZORPAY DOCUMENTATION VERIFIED:
 YES (Verified on 2026-08-24. Consulted "Payments Webhook Events" and "Validate and Test Webhooks" docs)
@@ -133,14 +136,53 @@ ARCHITECTURAL DEVIATIONS:
 None.
 
 BLOCKERS:
-Verification of webhook delivery from the live Razorpay Test Mode dashboard is blocked on the host machine because `zrok` is not installed. To execute this check:
-1. Download and authenticate `zrok`.
-2. Start the local server: `uvicorn apro.main:app --port 8000`
-3. Run `zrok share public http://localhost:8000`
-4. Set the public endpoint URL in the Razorpay Dashboard Webhook settings with the subscription `payment.failed` and configure `RAZORPAY_WEBHOOK_SECRET`.
+Verification of webhook delivery from the live Razorpay Test Mode dashboard is blocked on the host machine because `zrok` is not installed. To execute this check, follow the manual steps below.
 
 RECOMMENDED NEXT STEP:
-Proceed to Phase 02 — Event Schema & Database after Architecture Lead review.
+STOP. Wait for the developer to run the live Test Mode verification procedure and record live evidence. Do not proceed to Phase 02.
+
+---
+
+## Developer Manual Action: Live Webhook Verification Procedure
+
+Since the sandboxed execution environment lacks a public HTTPS tunnel (`zrok`) and Razorpay Dashboard access, the developer must perform the live verification run manually:
+
+### Step 1: Install and Configure zrok
+1. Sign up for a free account at [zrok.io](https://zrok.io).
+2. Download and install the `zrok` CLI on your machine.
+3. Enable your local environment with your user token:
+   ```bash
+   zrok enable <your-zrok-token>
+   ```
+
+### Step 2: Start APRO and Share Publicly
+1. Launch the local APRO server:
+   ```bash
+   uvicorn apro.main:app --port 8000
+   ```
+2. In a separate terminal, expose the server using `zrok`:
+   ```bash
+   zrok share public http://localhost:8000
+   ```
+   Take note of the public HTTPS URL generated (e.g. `https://<hash>.share.zrok.io`).
+
+### Step 3: Configure Razorpay Test Mode Webhook
+1. Log into your Razorpay Dashboard in **Test Mode**.
+2. Navigate to **Account & Settings** -> **Webhooks** -> **Add New Webhook**.
+3. Input the details:
+   - **Webhook URL**: `https://<hash>.share.zrok.io/webhooks/razorpay`
+   - **Secret**: Configure a secure secret (e.g., `test_webhook_secret`).
+   - **Active Events**: Check `payment.failed`.
+4. Click **Create Webhook**. Save the secret into your local `.env` file under the key `RAZORPAY_WEBHOOK_SECRET`.
+
+### Step 4: Simulate a Live Payment Failure
+1. Generate a Test Mode payment (e.g., using a mock Payment Link or Order).
+2. Complete the payment attempt using a mock failure path (e.g. select the Netbanking simulated failure option or input OTP fail test card numbers).
+3. Verify on the APRO console that the webhook was received, signature verified, and the metadata extracted successfully.
+4. Update `PHASE_01_VALIDATION_REPORT.md` with:
+   - `LIVE RAZORPAY WEBHOOK EVIDENCE: PASS`
+   - `LIVE RAZORPAY TEST MODE PAYMENT FAILURE: PASS`
+   - Paste the redacted headers and payload in the evidence section.
 
 ---
 
@@ -152,21 +194,21 @@ Below is the summary of passing unit and integration tests:
 tests\test_app.py .                                                      [  3%]
 tests\test_config.py ...                                                 [ 13%]
 tests\webhooks\test_razorpay_signature.py ......                         [ 33%]
-tests\webhooks\test_razorpay_webhook.py ....................             [100%]
+tests\webhooks\test_razorpay_webhook.py ................................ [100%]
 ======================== 30 passed, 1 warning in 0.62s ========================
 ```
 
-And the output of `ruff check .`:
+Output of `ruff check .`:
 ```text
 All checks passed!
 ```
 
-And the output of `mypy src tests`:
+Output of `mypy src tests`:
 ```text
 Success: no issues found in 9 source files
 ```
 
-And the output of local webhook simulations:
+Output of local webhook simulations:
 ```text
 > python scripts/simulate_webhook.py --event-id evt_sim_123
 Sending request to http://127.0.0.1:8000/webhooks/razorpay...
