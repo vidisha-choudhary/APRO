@@ -308,11 +308,9 @@ PHASE 0
 
 Repository \& Engineering Foundation
 
-
-
 PHASE 1
 
-Core Domain \& State Machines
+Core Domain \& State Machines (COMPLETE / PASS)
 
 
 
