@@ -28,10 +28,13 @@ _PAYMENT_ALLOWED_TRANSITIONS: dict[PaymentStatus, set[PaymentStatus]] = {
     },
     PaymentStatus.FAILED: {
         PaymentStatus.PENDING,
+        PaymentStatus.CAPTURED,
+        PaymentStatus.AUTHORIZED,
     },
     PaymentStatus.PENDING: {
         PaymentStatus.CAPTURED,
         PaymentStatus.FAILED,
+        PaymentStatus.AUTHORIZED,
     },
     PaymentStatus.CAPTURED: set(),  # Terminal state
 }

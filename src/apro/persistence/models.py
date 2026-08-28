@@ -55,11 +55,17 @@ class PaymentModel(Base):
     """Durable current payment ORM model."""
 
     __tablename__ = "payments"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "provider_payment_id", name="uq_payments_provider_payment_id"
+        ),
+    )
 
     payment_id: Mapped[str] = mapped_column(UUID_TYPE, primary_key=True)
     customer_id: Mapped[str] = mapped_column(
         UUID_TYPE, ForeignKey("customers.customer_id"), nullable=False, index=True
     )
+    provider_payment_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     order_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     amount: Mapped[int] = mapped_column(

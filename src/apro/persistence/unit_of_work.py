@@ -68,3 +68,9 @@ class UnitOfWork:
         if self.session is None:
             raise RuntimeError("Cannot rollback outside an active UnitOfWork context.")
         await self.session.rollback()
+
+    async def flush(self) -> None:
+        """Explicitly flush pending changes to the database."""
+        if self.session is None:
+            raise RuntimeError("Cannot flush outside an active UnitOfWork context.")
+        await self.session.flush()

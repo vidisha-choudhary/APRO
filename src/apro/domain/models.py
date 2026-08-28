@@ -41,6 +41,7 @@ class Payment(BaseModel):
 
     payment_id: str
     customer_id: str
+    provider_payment_id: str | None = None
     order_id: str | None = None
     provider: str
     amount: int

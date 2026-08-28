@@ -109,6 +109,7 @@ class PaymentRepository:
             orm = payment_to_orm(payment)
             self._session.add(orm)
         else:
+            orm.provider_payment_id = payment.provider_payment_id
             orm.status = (
                 payment.status.value
                 if isinstance(payment.status, PaymentStatus)
@@ -122,6 +123,19 @@ class PaymentRepository:
 
     async def get_by_id(self, payment_id: str) -> Payment | None:
         orm = await self._session.get(PaymentModel, payment_id)
+        return payment_to_domain(orm) if orm else None
+
+    async def find_by_provider_payment_id(
+        self, provider: str, provider_payment_id: str, for_update: bool = False
+    ) -> Payment | None:
+        stmt = select(PaymentModel).where(
+            PaymentModel.provider == provider,
+            PaymentModel.provider_payment_id == provider_payment_id,
+        )
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
         return payment_to_domain(orm) if orm else None
 
     async def update_status_conditional(
@@ -141,6 +155,7 @@ class PaymentRepository:
         if orm is None:
             msg = f"Payment {payment.payment_id} modified or not in {expected_status}."
             raise InvalidStateTransitionError(msg)
+        orm.provider_payment_id = payment.provider_payment_id
         orm.status = (
             payment.status.value
             if isinstance(payment.status, PaymentStatus)
@@ -215,6 +230,21 @@ class PaymentEventRepository:
         )
         result = await self._session.execute(stmt)
         return [payment_event_to_domain(row) for row in result.scalars()]
+
+    async def find_latest_by_payment_id(self, payment_id: str) -> PaymentEvent | None:
+        """Find the latest canonical PaymentEvent for a payment by event_timestamp."""
+        stmt = (
+            select(PaymentEventModel)
+            .where(PaymentEventModel.payment_id == payment_id)
+            .order_by(
+                PaymentEventModel.event_timestamp.desc(),
+                PaymentEventModel.received_at.desc(),
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return payment_event_to_domain(orm) if orm else None
 
 
 class RecoveryCaseRepository:

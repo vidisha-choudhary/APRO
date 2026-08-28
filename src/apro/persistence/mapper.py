@@ -72,6 +72,7 @@ def payment_to_orm(domain: Payment) -> PaymentModel:
     return PaymentModel(
         payment_id=domain.payment_id,
         customer_id=domain.customer_id,
+        provider_payment_id=domain.provider_payment_id,
         order_id=domain.order_id,
         provider=domain.provider,
         amount=domain.amount,
@@ -91,6 +92,7 @@ def payment_to_domain(orm: PaymentModel) -> Payment:
     return Payment(
         payment_id=orm.payment_id,
         customer_id=orm.customer_id,
+        provider_payment_id=orm.provider_payment_id,
         order_id=orm.order_id,
         provider=orm.provider,
         amount=orm.amount,

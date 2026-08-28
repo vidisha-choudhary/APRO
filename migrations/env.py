@@ -1,6 +1,7 @@
 """Alembic environment configuration."""
 
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -21,7 +22,11 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    url = config.get_main_option("sqlalchemy.url") or settings.DATABASE_URL
+    url = (
+        config.get_main_option("sqlalchemy.url")
+        or settings.DATABASE_URL
+        or os.getenv("POSTGRES_TEST_URL")
+    )
     if not url:
         raise ValueError("DATABASE_URL is not configured for Alembic migrations.")
     if url.startswith("postgresql://"):

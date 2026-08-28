@@ -29,6 +29,14 @@ def secret_setup(monkeypatch: pytest.MonkeyPatch) -> str:
     return secret
 
 
+@pytest.fixture(autouse=True)
+def disable_db_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure legacy isolated unit tests use standalone router path without DB."""
+    monkeypatch.setattr(settings, "DATABASE_URL", None)
+    if hasattr(app.state, "session_factory"):
+        monkeypatch.setattr(app.state, "session_factory", None)
+
+
 def sign_payload(body: bytes, secret: str) -> str:
     return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
@@ -144,14 +152,14 @@ def test_webhook_duplicate_event_id(
 def test_webhook_wrong_event_type(
     valid_payload: dict[str, Any], secret_setup: str
 ) -> None:
-    """Test non-failure events are cleanly ignored and not processed as failures."""
-    valid_payload["event"] = "payment.captured"
+    """Test non-payment events are ignored and not processed as payment failures."""
+    valid_payload["event"] = "payment.downtime.updated"
     body = json.dumps(valid_payload).encode("utf-8")
     sig = sign_payload(body, secret_setup)
 
     headers = {
         "X-Razorpay-Signature": sig,
-        "X-Razorpay-Event-Id": "evt_test_captured_123",
+        "X-Razorpay-Event-Id": "evt_test_downtime_123",
     }
     response = client.post("/webhooks/razorpay", content=body, headers=headers)
 

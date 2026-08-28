@@ -128,9 +128,9 @@ def test_payment_captured_terminal_state_lock(
 
 
 def test_payment_invalid_transition(sample_payment: Payment) -> None:
-    # FAILED cannot transition directly to AUTHORIZED
+    # FAILED cannot transition back to CREATED
     with pytest.raises(InvalidStateTransitionError):
-        transition_payment(sample_payment, PaymentStatus.AUTHORIZED)
+        transition_payment(sample_payment, PaymentStatus.CREATED)
 
 
 # ==============================================================================
