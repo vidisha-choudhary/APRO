@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Razorpay Webhook Configuration (Phase 01)
     RAZORPAY_WEBHOOK_SECRET: str | None = Field(default=None)
 
+    # Database Configuration (Phase 2) - No default credential string
+    DATABASE_URL: str | None = Field(default=None)
+
     # Settings configuration
     model_config = SettingsConfigDict(
         env_file=".env",
