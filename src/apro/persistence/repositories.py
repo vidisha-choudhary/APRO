@@ -284,6 +284,29 @@ class RecoveryCaseRepository:
         result = await self._session.execute(stmt)
         return [recovery_case_to_domain(row) for row in result.scalars()]
 
+    async def list_by_payment_id(self, payment_id: str) -> list[RecoveryCase]:
+        """Alias for find_by_payment_id."""
+        return await self.find_by_payment_id(payment_id)
+
+    async def find_active_by_payment_id(
+        self, payment_id: str, for_update: bool = False
+    ) -> RecoveryCase | None:
+        """Find non-terminal active RecoveryCase for a payment."""
+        terminal_statuses = [
+            RecoveryCaseStatus.RECOVERED.value,
+            RecoveryCaseStatus.STOPPED.value,
+            RecoveryCaseStatus.ESCALATED.value,
+        ]
+        stmt = select(RecoveryCaseModel).where(
+            RecoveryCaseModel.payment_id == payment_id,
+            RecoveryCaseModel.status.notin_(terminal_statuses),
+        )
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return recovery_case_to_domain(orm) if orm else None
+
     async def update_status_conditional(
         self, case: RecoveryCase, expected_status: RecoveryCaseStatus
     ) -> RecoveryCase:

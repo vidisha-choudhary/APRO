@@ -21,6 +21,7 @@ from apro.events.exceptions import (
 )
 from apro.events.razorpay_adapter import RazorpayAdapter
 from apro.persistence.unit_of_work import UnitOfWork
+from apro.recovery.orchestrator import RecoveryCaseOrchestrator
 from apro.webhooks.verification import verify_razorpay_signature
 
 logger = logging.getLogger("apro.events.pipeline")
@@ -64,6 +65,7 @@ class EventPipeline:
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+        self._orchestrator = RecoveryCaseOrchestrator()
 
     async def process_webhook(
         self,
@@ -237,9 +239,9 @@ class EventPipeline:
                     latest_event.event_timestamp,
                     internal_payment_id,
                 )
-            elif current_status == target_status:
-                classification = "NEW"
-            else:
+            # Effective Payment resolution post-transition attempt
+            effective_payment = existing_payment
+            if classification != "STALE":
                 try:
                     updated_payment = transition_payment(
                         existing_payment,
@@ -249,6 +251,7 @@ class EventPipeline:
                     await uow.payments.update_status_conditional(
                         updated_payment, expected_status=current_status
                     )
+                    effective_payment = updated_payment
                 except (InvalidStateTransitionError, CapturedPaymentRecoveryError):
                     classification = "STALE"
                     logger.info(
@@ -257,6 +260,11 @@ class EventPipeline:
                         target_status,
                         internal_payment_id,
                     )
+
+            # Phase 4 Recovery Case Orchestration (Atomic UOW boundary)
+            await self._orchestrator.handle_payment_event(
+                uow, canonical_event, effective_payment
+            )
 
             await uow.commit()
 

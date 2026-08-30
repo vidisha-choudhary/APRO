@@ -14,15 +14,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from apro.config import settings
-from apro.domain.enums import PaymentStatus
+from apro.domain.enums import PaymentStatus, RecoveryCaseStatus
 from apro.domain.models import Customer, Payment
 from apro.main import app
 from apro.persistence.base import Base
 from apro.persistence.repositories import (
+    AuditEventRepository,
     CustomerRepository,
     PaymentEventRepository,
     PaymentRepository,
     RawEventRepository,
+    RecoveryCaseRepository,
 )
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -135,6 +137,8 @@ async def test_http_route_event_pipeline_postgres_integration(
         p_repo = PaymentRepository(session)
         pevt_repo = PaymentEventRepository(session)
         raw_repo = RawEventRepository(session)
+        case_repo = RecoveryCaseRepository(session)
+        audit_repo = AuditEventRepository(session)
 
         pay = await p_repo.get_by_id(p_id)
         assert pay is not None
@@ -146,4 +150,13 @@ async def test_http_route_event_pipeline_postgres_integration(
 
         raw_evt = await raw_repo.find_by_provider_event_id("razorpay", evt_id)
         assert raw_evt is not None
+
+        # Phase 4 end-to-end HTTP verification: RecoveryCase + AuditEvent
+        case = await case_repo.find_active_by_payment_id(p_id)
+        assert case is not None
+        assert case.status == RecoveryCaseStatus.NEW
+
+        audits = await audit_repo.find_by_case_id(case.case_id)
+        assert len(audits) >= 1
+        assert audits[0].event_type == "RECOVERY_CASE_CREATED"
     await engine2.dispose()
