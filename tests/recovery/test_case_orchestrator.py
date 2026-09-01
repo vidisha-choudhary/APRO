@@ -29,7 +29,9 @@ from apro.recovery.placeholders import (
 
 @pytest.mark.asyncio
 async def test_case_creation_and_fields() -> None:
-    """Test qualifying payment failure creates RecoveryCase(status=NEW) with correct fields."""
+    """Test qualifying payment failure creates RecoveryCase(status=NEW)
+    with correct fields.
+    """
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
 
     from apro.persistence.models import Base
@@ -101,7 +103,9 @@ async def test_case_creation_and_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_active_case_reuse() -> None:
-    """Test repeated qualifying event reuses active RecoveryCase without creating a duplicate."""
+    """Test repeated qualifying event reuses active RecoveryCase
+    without creating a duplicate.
+    """
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     from apro.persistence.models import Base
 
@@ -333,7 +337,9 @@ async def test_captured_payment_safely_terminates_active_case() -> None:
 
 @pytest.mark.asyncio
 async def test_new_recovery_episode_after_terminal_case() -> None:
-    """Test new qualifying failure creates a new RecoveryCase after previous case is terminal."""
+    """Test new qualifying failure creates a new RecoveryCase after
+    previous case is terminal.
+    """
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     from apro.persistence.models import Base
 
@@ -490,7 +496,9 @@ async def test_controlled_lifecycle_transitions_and_invalid_transition_rejection
 
 
 def test_placeholder_providers() -> None:
-    """Test PlaceholderDiagnosisProvider and PlaceholderEvaluationProvider are deterministic and AI-free."""
+    """Test PlaceholderDiagnosisProvider and PlaceholderEvaluationProvider
+    are deterministic and AI-free.
+    """
     diag_provider = PlaceholderDiagnosisProvider()
     diag = diag_provider.get_diagnosis("case_123")
 
@@ -514,7 +522,8 @@ def test_placeholder_providers() -> None:
 
 @pytest.mark.asyncio
 async def test_orchestration_failure_rolls_back_case_and_audit_mutations() -> None:
-    """Test failure originating after real audit append execution rolls back case & audit.
+    """Test failure originating after real audit append execution rolls back
+    case & audit.
 
     Proves:
     - RecoveryCase created and flushed to DB session inside handle_payment_failed
@@ -576,7 +585,8 @@ async def test_orchestration_failure_rolls_back_case_and_audit_mutations() -> No
             async def failing_append(audit: Any) -> Any:
                 result = await original_append(audit)
                 actual_case_id_holder.append(audit.case_id)
-                # Prove BOTH case and audit event are present in current uncommitted session
+                # Prove BOTH case and audit event are present in current
+                # uncommitted session
                 cases_in_session = await uow.recovery_cases.find_by_payment_id(p_id)
                 assert len(cases_in_session) == 1
                 audits_in_session = await uow.audit_events.find_by_case_id(
@@ -589,10 +599,12 @@ async def test_orchestration_failure_rolls_back_case_and_audit_mutations() -> No
             uow.audit_events.append = failing_append  # type: ignore[assignment]
 
             orchestrator = RecoveryCaseOrchestrator()
-            # handle_payment_failed executes: saves case -> appends real audit event -> fails
+            # handle_payment_failed executes: saves case ->
+            # appends real audit event -> fails
             await orchestrator.handle_payment_failed(uow, payment, evt)
 
-    # Verify from a FRESH database session that BOTH case and audit mutations were rolled back
+    # Verify from a FRESH database session that BOTH case and audit
+    # mutations were rolled back
     assert len(actual_case_id_holder) == 1
     actual_case_id = actual_case_id_holder[0]
 

@@ -50,7 +50,8 @@ def raw_failed_payload() -> dict[str, Any]:
 async def test_postgres_concurrent_case_creation_race(
     raw_failed_payload: dict[str, Any],
 ) -> None:
-    """Test concurrent delivery of qualifying payment.failed webhooks against PostgreSQL.
+    """Test concurrent delivery of qualifying payment.failed webhooks
+    against PostgreSQL.
 
     Guarantees:
     - Uses two independent AsyncSession instances / PostgreSQL database connections
