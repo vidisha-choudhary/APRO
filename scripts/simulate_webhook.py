@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import sys
+
 import httpx
 
 # Mock payload based on standard Razorpay structure
@@ -63,9 +64,7 @@ def simulate(url: str, secret: str, event_id: str, mutate: bool = False) -> None
     else:
         sig_body = body
 
-    signature = hmac.new(
-        secret.encode("utf-8"), sig_body, hashlib.sha256
-    ).hexdigest()
+    signature = hmac.new(secret.encode("utf-8"), sig_body, hashlib.sha256).hexdigest()
 
     headers = {
         "X-Razorpay-Signature": signature,
@@ -90,9 +89,7 @@ def simulate(url: str, secret: str, event_id: str, mutate: bool = False) -> None
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Simulate Razorpay webhook locally."
-    )
+    parser = argparse.ArgumentParser(description="Simulate Razorpay webhook locally.")
     parser.add_argument(
         "--url",
         default="http://127.0.0.1:8000/webhooks/razorpay",
@@ -101,9 +98,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--secret", default="test_webhook_secret", help="Webhook secret"
     )
-    parser.add_argument(
-        "--event-id", default="evt_mock_999", help="Razorpay Event ID"
-    )
+    parser.add_argument("--event-id", default="evt_mock_999", help="Razorpay Event ID")
     parser.add_argument(
         "--mutate",
         action="store_true",
