@@ -17,17 +17,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "payments",
-        sa.Column("provider_payment_id", sa.String(length=128), nullable=True),
-    )
-    op.create_unique_constraint(
-        "uq_payments_provider_payment_id",
-        "payments",
-        ["provider", "provider_payment_id"],
-    )
+    with op.batch_alter_table("payments") as batch_op:
+        batch_op.add_column(
+            sa.Column("provider_payment_id", sa.String(length=128), nullable=True),
+        )
+        batch_op.create_unique_constraint(
+            "uq_payments_provider_payment_id",
+            ["provider", "provider_payment_id"],
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_payments_provider_payment_id", "payments", type_="unique")
-    op.drop_column("payments", "provider_payment_id")
+    with op.batch_alter_table("payments") as batch_op:
+        batch_op.drop_constraint("uq_payments_provider_payment_id", type_="unique")
+        batch_op.drop_column("provider_payment_id")
