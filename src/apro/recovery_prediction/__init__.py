@@ -13,6 +13,7 @@ from apro.recovery_prediction.classifiers import (
     LogisticRegressionOutcomeModel,
     RandomForestOutcomeModel,
 )
+from apro.recovery_prediction.consumer import PredictionArtifactConsumer
 from apro.recovery_prediction.enums import (
     OUTCOME_TAXONOMY_ORDER,
     OUTCOME_TAXONOMY_VERSION,
@@ -65,6 +66,7 @@ __all__ = [
     "LogisticRegressionOutcomeModel",
     "MultiActionOutcomePrediction",
     "OutcomePrediction",
+    "PredictionArtifactConsumer",
     "PerActionAmountMetric",
     "PerActionClassificationMetric",
     "PotentialOutcomeMetrics",

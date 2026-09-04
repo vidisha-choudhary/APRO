@@ -546,3 +546,13 @@ class AuditEventRepository:
         stmt = select(AuditEventModel).where(AuditEventModel.case_id == case_id)
         result = await self._session.execute(stmt)
         return [audit_event_to_domain(row) for row in result.scalars()]
+
+    async def find_by_correlation_id(self, correlation_id: str) -> list[AuditEvent]:
+        stmt = select(AuditEventModel).where(
+            AuditEventModel.correlation_id == correlation_id
+        )
+        result = await self._session.execute(stmt)
+        return [audit_event_to_domain(row) for row in result.scalars()]
+
+    async def find_by_trace_id(self, trace_id: str) -> list[AuditEvent]:
+        return await self.find_by_correlation_id(trace_id)

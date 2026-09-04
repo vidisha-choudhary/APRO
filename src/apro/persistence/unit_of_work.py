@@ -1,5 +1,6 @@
 """Async Unit of Work pattern implementation for atomic multi-repository operations."""
 
+from contextvars import ContextVar, Token
 from types import TracebackType
 from typing import Self
 
@@ -21,6 +22,15 @@ from apro.persistence.repositories import (
     RecoveryCaseRepository,
 )
 
+_current_uow: ContextVar["UnitOfWork | None"] = ContextVar(
+    "apro_current_uow", default=None
+)
+
+
+def get_current_uow() -> "UnitOfWork | None":
+    """Retrieve the current task-local UnitOfWork instance if active."""
+    return _current_uow.get()
+
 
 class UnitOfWork:
     """Unit of Work manager for database transactions and repository lifecycles."""
@@ -28,6 +38,7 @@ class UnitOfWork:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
         self.session: AsyncSession | None = None
+        self._uow_token: Token[UnitOfWork | None] | None = None
 
     async def __aenter__(self) -> Self:
         self.session = self._session_factory()
@@ -44,6 +55,7 @@ class UnitOfWork:
         self.executions = ExecutionRepository(self.session)
         self.outcomes = OutcomeRepository(self.session)
         self.audit_events = AuditEventRepository(self.session)
+        self._uow_token = _current_uow.set(self)
         return self
 
     async def __aexit__(
@@ -52,10 +64,15 @@ class UnitOfWork:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        if self.session is not None:
-            if exc_type is not None:
-                await self.session.rollback()
-            await self.session.close()
+        try:
+            if self.session is not None:
+                if exc_type is not None:
+                    await self.session.rollback()
+                await self.session.close()
+        finally:
+            if self._uow_token is not None:
+                _current_uow.reset(self._uow_token)
+                self._uow_token = None
 
     async def commit(self) -> None:
         """Explicitly commit the current database transaction."""

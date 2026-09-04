@@ -1,0 +1,87 @@
+"""Audit enum definitions and schema version constants for Phase 14."""
+
+from enum import StrEnum
+
+
+class AuditEventType(StrEnum):
+    """Machine-readable event vocabulary for Phase 14 audit logging."""
+
+    # Case & Ingestion
+    CASE_CREATED = "CASE_CREATED"
+    CASE_STATE_CHANGED = "CASE_STATE_CHANGED"
+    PAYMENT_EVENT_OBSERVED = "PAYMENT_EVENT_OBSERVED"
+    PAYMENT_STATE_CHANGED = "PAYMENT_STATE_CHANGED"
+
+    # AI Diagnosis & Prediction
+    DIAGNOSIS_CREATED = "DIAGNOSIS_CREATED"
+    DIAGNOSIS_USED = "DIAGNOSIS_USED"
+    PREDICTION_CREATED = "PREDICTION_CREATED"
+    PREDICTION_USED = "PREDICTION_USED"
+
+    # Decision & Policy
+    DECISION_CREATED = "DECISION_CREATED"
+    POLICY_DECISION_CREATED = "POLICY_DECISION_CREATED"
+    ACTION_APPROVED = "ACTION_APPROVED"
+
+    # Execution
+    EXECUTION_STARTED = "EXECUTION_STARTED"
+    EXECUTION_COMPLETED = "EXECUTION_COMPLETED"
+    EXECUTION_FAILED = "EXECUTION_FAILED"
+    EXECUTION_UNKNOWN = "EXECUTION_UNKNOWN"
+
+    # Outcome & Recovery Loop
+    OUTCOME_OBSERVED = "OUTCOME_OBSERVED"
+    OUTCOME_PROCESSED = "OUTCOME_PROCESSED"
+    RE_EVALUATION_STARTED = "RE_EVALUATION_STARTED"
+    RE_EVALUATION_COMPLETED = "RE_EVALUATION_COMPLETED"
+
+    # Governance & Escalation
+    HUMAN_APPROVAL_REQUESTED = "HUMAN_APPROVAL_REQUESTED"
+    HUMAN_APPROVAL_GRANTED = "HUMAN_APPROVAL_GRANTED"
+    HUMAN_APPROVAL_REJECTED = "HUMAN_APPROVAL_REJECTED"
+    ESCALATION_CREATED = "ESCALATION_CREATED"
+    STOP_DECIDED = "STOP_DECIDED"
+    RECOVERY_CONFIRMED = "RECOVERY_CONFIRMED"
+
+    # Observability & Diagnostics
+    ERROR_OBSERVED = "ERROR_OBSERVED"
+    INTEGRITY_VIOLATION_DETECTED = "INTEGRITY_VIOLATION_DETECTED"
+    SECURITY_VIOLATION_DETECTED = "SECURITY_VIOLATION_DETECTED"
+
+
+class AuditCompleteness(StrEnum):
+    """Completeness evaluation status for reconstructed case audit trails."""
+
+    COMPLETE = "COMPLETE"
+    INCOMPLETE = "INCOMPLETE"
+    CORRUPT = "CORRUPT"
+
+
+class AuditComponent(StrEnum):
+    """Subsystem/component identifying where an audit event originated."""
+
+    ORCHESTRATOR = "ORCHESTRATOR"
+    DIAGNOSIS = "DIAGNOSIS"
+    PREDICTION = "PREDICTION"
+    DECISION = "DECISION"
+    POLICY = "POLICY"
+    EXECUTION = "EXECUTION"
+    PROVIDER = "PROVIDER"
+    OUTCOME = "OUTCOME"
+    RECOVERY_LOOP = "RECOVERY_LOOP"
+    AUDIT = "AUDIT"
+
+
+class AuditLogLevel(StrEnum):
+    """Log levels supported for structured logging."""
+
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
+# Explicit schema versions for Phase 14 & Phase 18 audit interpretation
+AUDIT_SCHEMA_VERSION: str = "audit-schema-v1"
+TRACE_SCHEMA_VERSION: str = "trace-schema-v1"

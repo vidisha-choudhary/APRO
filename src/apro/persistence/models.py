@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -374,3 +375,23 @@ class AuditEventModel(Base):
     )
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB_TYPE, nullable=False)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+@event.listens_for(AuditEventModel, "before_update")
+def _prevent_audit_event_update(_mapper: Any, _connection: Any, target: Any) -> None:
+    from apro.audit.exceptions import AuditImmutabilityError
+
+    ev_id = getattr(target, "audit_event_id", "")
+    raise AuditImmutabilityError(
+        f"AuditEventModel {ev_id} is immutable and cannot be updated."
+    )
+
+
+@event.listens_for(AuditEventModel, "before_delete")
+def _prevent_audit_event_delete(_mapper: Any, _connection: Any, target: Any) -> None:
+    from apro.audit.exceptions import AuditImmutabilityError
+
+    ev_id = getattr(target, "audit_event_id", "")
+    raise AuditImmutabilityError(
+        f"AuditEventModel {ev_id} is immutable and cannot be deleted."
+    )

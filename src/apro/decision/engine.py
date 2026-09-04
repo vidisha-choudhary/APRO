@@ -49,6 +49,7 @@ class EconomicDecisionEngine:
         prediction_feature_schema_version: str = (
             RECOVERY_OUTCOME_FEATURE_SCHEMA_VERSION
         ),
+        audit_service: Any | None = None,
     ) -> None:
         self._decision_model_version = decision_model_version
         self._economic_config = economic_config or EconomicConfiguration()
@@ -57,6 +58,7 @@ class EconomicDecisionEngine:
         self._action_schema_version = action_schema_version
         self._feature_schema_version = feature_schema_version
         self._prediction_feature_schema_version = prediction_feature_schema_version
+        self.audit_service = audit_service
 
         # Validate engine configuration versions on initialization
         if self._policy_engine.config.policy_version != POLICY_CONFIG_SCHEMA_VERSION:
@@ -298,7 +300,7 @@ class EconomicDecisionEngine:
             h_str = hashlib.sha256(decision_id_str.encode("utf-8")).hexdigest()
             dec_id = f"dec_{h_str[:16]}"
 
-            return RecoveryDecision(
+            decision = RecoveryDecision(
                 decision_id=dec_id,
                 record_id=model_input.record_id,
                 scenario_id=model_input.scenario_id,
@@ -324,6 +326,18 @@ class EconomicDecisionEngine:
                 evaluation_run_id=evaluation_run_id,
                 provenance=provenance or {},
             )
+            if self.audit_service is not None and hasattr(
+                self.audit_service, "record_decision_sync"
+            ):
+                candidates_summary = [
+                    {"action": k.value, "erv": v.expected_recovery_value}
+                    for k, v in decision.utility_by_action.items()
+                ]
+                self.audit_service.record_decision_sync(
+                    decision=decision,
+                    candidate_actions=candidates_summary,
+                )
+            return decision
 
         # Step 5: Economic Optimization & Ranking
         eligible_ervs = {
@@ -348,7 +362,7 @@ class EconomicDecisionEngine:
             h_str = hashlib.sha256(decision_id_str.encode("utf-8")).hexdigest()
             dec_id = f"dec_{h_str[:16]}"
 
-            return RecoveryDecision(
+            decision = RecoveryDecision(
                 decision_id=dec_id,
                 record_id=model_input.record_id,
                 scenario_id=model_input.scenario_id,
@@ -374,6 +388,18 @@ class EconomicDecisionEngine:
                 evaluation_run_id=evaluation_run_id,
                 provenance=provenance or {},
             )
+            if self.audit_service is not None and hasattr(
+                self.audit_service, "record_decision_sync"
+            ):
+                candidates_summary = [
+                    {"action": k.value, "erv": v.expected_recovery_value}
+                    for k, v in decision.utility_by_action.items()
+                ]
+                self.audit_service.record_decision_sync(
+                    decision=decision,
+                    candidate_actions=candidates_summary,
+                )
+            return decision
 
         # Step 6: Candidate Set within Tolerance & Deterministic Tie-Breaking
         tolerance = self._economic_config.utility_tolerance
@@ -430,7 +456,7 @@ class EconomicDecisionEngine:
             f"dec_{hashlib.sha256(decision_id_str.encode('utf-8')).hexdigest()[:16]}"
         )
 
-        return RecoveryDecision(
+        decision = RecoveryDecision(
             decision_id=dec_id,
             record_id=model_input.record_id,
             scenario_id=model_input.scenario_id,
@@ -455,4 +481,36 @@ class EconomicDecisionEngine:
             dataset_version=model_input.dataset_version,
             evaluation_run_id=evaluation_run_id,
             provenance=provenance or {},
+        )
+        if self.audit_service is not None and hasattr(
+            self.audit_service, "record_decision_sync"
+        ):
+            candidates_summary = [
+                {"action": k.value, "erv": v.expected_recovery_value}
+                for k, v in decision.utility_by_action.items()
+            ]
+            self.audit_service.record_decision_sync(
+                decision=decision,
+                candidate_actions=candidates_summary,
+            )
+        return decision
+
+    async def record_audit(
+        self,
+        decision: RecoveryDecision,
+        cycle_number: int = 1,
+        uow: Any | None = None,
+    ) -> Any | None:
+        """Record decision audit event via configured AuditService."""
+        if self.audit_service is None:
+            return None
+        candidates_summary = [
+            {"action": k.value, "erv": v.expected_recovery_value}
+            for k, v in decision.utility_by_action.items()
+        ]
+        return await self.audit_service.record_decision(
+            decision=decision,
+            candidate_actions=candidates_summary,
+            cycle_number=cycle_number,
+            uow=uow,
         )

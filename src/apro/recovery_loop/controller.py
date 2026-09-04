@@ -5,6 +5,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from apro.audit.correlation import async_correlation_scope
 from apro.dataset.models import ModelInputRecord
 from apro.decision.engine import EconomicDecisionEngine
 from apro.decision.models import RecoveryDecision
@@ -57,16 +58,19 @@ class RecoveryLoopController:
         history_service: ActionHistoryService | None = None,
         context_builder: ReEvaluationContextBuilder | None = None,
         safety_guard: LoopSafetyGuard | None = None,
+        audit_service: Any | None = None,
     ) -> None:
         self.safety_guard = safety_guard or LoopSafetyGuard()
         self.history_service = history_service or ActionHistoryService()
         self.disposition_resolver = disposition_resolver or DispositionResolver(
             self.safety_guard
         )
+        self.audit_service = audit_service
         self.outcome_processor = outcome_processor or OutcomeProcessor(
             disposition_resolver=self.disposition_resolver,
             history_service=self.history_service,
             safety_guard=self.safety_guard,
+            audit_service=self.audit_service,
         )
         self.context_builder = context_builder or ReEvaluationContextBuilder()
         self._locks: dict[str, asyncio.Lock] = {}
@@ -168,33 +172,280 @@ class RecoveryLoopController:
             # Step 2: Next cycle setup
             next_cycle = cycle_number + 1
 
-            # Query authoritative history
-            if uow is not None:
-                history = await self.history_service.get_case_history(
-                    updated_case.case_id, uow
-                )
-            else:
-                history = tuple(self._in_memory_history.get(updated_case.case_id, []))
-
-            # Build fresh observable context
-            context = self.context_builder.build_context(
-                case=updated_case,
-                payment=updated_payment,
-                cycle_number=next_cycle,
-                history=history,
-                latest_diagnosis=None,
-                latest_outcome=outcome_res.outcome,
-                base_model_input=base_model_input,
-                now=current_time,
-            )
-
-            # If re-evaluation components are not supplied, return context info
-            if (
-                decision_engine is None
-                or policy_engine is None
-                or execution_orchestrator is None
-                or predictions_provider is None
+            async with async_correlation_scope(
+                case_id=updated_case.case_id, cycle_id=next_cycle
             ):
+                # Query authoritative history
+                if uow is not None:
+                    history = await self.history_service.get_case_history(
+                        updated_case.case_id, uow
+                    )
+                else:
+                    history = tuple(
+                        self._in_memory_history.get(updated_case.case_id, [])
+                    )
+
+                # Build fresh observable context
+                context = self.context_builder.build_context(
+                    case=updated_case,
+                    payment=updated_payment,
+                    cycle_number=next_cycle,
+                    history=history,
+                    latest_diagnosis=None,
+                    latest_outcome=outcome_res.outcome,
+                    base_model_input=base_model_input,
+                    now=current_time,
+                )
+
+                # Record re-evaluation audit event
+                if self.audit_service is not None and uow is not None:
+                    await self.audit_service.record_re_evaluation(
+                        updated_case.case_id,
+                        cycle_number=next_cycle,
+                        reason="ACTION_FAILED",
+                        uow=uow,
+                    )
+
+                # If re-evaluation components are not supplied, return context info
+                if (
+                    decision_engine is None
+                    or policy_engine is None
+                    or execution_orchestrator is None
+                    or predictions_provider is None
+                ):
+                    updated_outcome_res = OutcomeProcessingResult(
+                        outcome=outcome_res.outcome,
+                        disposition=outcome_res.disposition,
+                        case_status=updated_case.status,
+                        re_evaluation_id=context.re_evaluation_id,
+                        termination_reason=outcome_res.termination_reason,
+                        cycle_number=cycle_number,
+                        provenance=outcome_res.provenance,
+                    )
+                    res = AdaptiveCycleResult(
+                        cycle_number=next_cycle,
+                        re_evaluation_id=context.re_evaluation_id,
+                        outcome_result=updated_outcome_res,
+                        decision=None,
+                        policy_decision=None,
+                        execution_result=None,
+                    )
+                    return res, updated_case, updated_payment
+
+                # Step 3: Diagnosis (Phase 7)
+                diag_result: DiagnosisResult | None = None
+                if diagnosis_provider is not None:
+                    diag_result = diagnosis_provider(context.model_input)
+                    if self.audit_service is not None and uow is not None:
+                        await self.audit_service.record_diagnosis(
+                            diagnosis=diag_result,
+                            case_id=updated_case.case_id,
+                            cycle_number=next_cycle,
+                            uow=uow,
+                        )
+
+                # Step 4: Outcome Predictions (Phase 8)
+                predictions = predictions_provider(context.model_input, diag_result)
+                if self.audit_service is not None and uow is not None and predictions:
+                    await self.audit_service.record_predictions(
+                        predictions=list(predictions.values()),
+                        case_id=updated_case.case_id,
+                        cycle_number=next_cycle,
+                        uow=uow,
+                    )
+
+                # Step 5: Economic Decision (Phase 9 - Sole Action Selection Authority)
+                if (
+                    getattr(decision_engine, "audit_service", None) is None
+                    and self.audit_service is not None
+                ):
+                    decision_engine.audit_service = self.audit_service
+
+                decision: RecoveryDecision = decision_engine.decide(
+                    model_input=context.model_input,
+                    diagnosis_result=diag_result,
+                    outcome_predictions=predictions,
+                    recovery_case_id=updated_case.case_id,
+                )
+
+                # Advance case through state machine for decision cycle
+                if updated_case.status == RecoveryCaseStatus.EVALUATING:
+                    updated_case = transition_recovery_case(
+                        case=updated_case,
+                        payment=updated_payment,
+                        new_status=RecoveryCaseStatus.DECISION_PENDING,
+                        now=current_time,
+                    )
+                    updated_case = transition_recovery_case(
+                        case=updated_case,
+                        payment=updated_payment,
+                        new_status=RecoveryCaseStatus.POLICY_CHECK,
+                        now=current_time,
+                    )
+
+                # Step 6: Policy & Safety Governance (Phase 10 Authority)
+                policy_history = self.history_service.build_policy_execution_history(
+                    history
+                )
+                if (
+                    getattr(policy_engine, "audit_service", None) is None
+                    and self.audit_service is not None
+                ):
+                    policy_engine.audit_service = self.audit_service
+
+                policy_decision, _trace = policy_engine.evaluate(
+                    decision=decision,
+                    payment=updated_payment,
+                    case=updated_case,
+                    current_time=current_time,
+                    history=policy_history,
+                    event_trust=EventTrustState.TRUSTED,
+                )
+
+                # Step 7: Enforce No-Blind-Repetition & Loop Bounds Safety Guard
+                domain_action_type: RecoveryActionType | None = None
+                can_execute = False
+
+                if policy_decision.policy_outcome == PolicyOutcome.BLOCK:
+                    if updated_case.status == RecoveryCaseStatus.POLICY_CHECK:
+                        updated_case = transition_recovery_case(
+                            case=updated_case,
+                            payment=updated_payment,
+                            new_status=RecoveryCaseStatus.STOPPED,
+                            now=current_time,
+                        )
+                    term_reason = LoopTerminationReason.POLICY_BLOCKED
+                    if (
+                        policy_decision.reason_code
+                        == PolicyReasonCode.MAX_SAME_ACTION_REPETITIONS_REACHED
+                        or "SAME_ACTION" in str(policy_decision.reason_code)
+                        or "RETRY" in str(policy_decision.reason_code)
+                    ):
+                        term_reason = LoopTerminationReason.SAME_ACTION_LIMIT_EXCEEDED
+                    outcome_res = OutcomeProcessingResult(
+                        outcome=outcome_res.outcome,
+                        disposition=RecoveryLoopDisposition.STOP,
+                        case_status=updated_case.status,
+                        re_evaluation_id=context.re_evaluation_id,
+                        termination_reason=term_reason,
+                        cycle_number=cycle_number,
+                        provenance=outcome_res.provenance,
+                    )
+                elif (
+                    policy_decision.policy_outcome
+                    == PolicyOutcome.REQUIRE_HUMAN_APPROVAL
+                ):
+                    if updated_case.status == RecoveryCaseStatus.POLICY_CHECK:
+                        updated_case = transition_recovery_case(
+                            case=updated_case,
+                            payment=updated_payment,
+                            new_status=RecoveryCaseStatus.ESCALATED,
+                            now=current_time,
+                        )
+                    outcome_res = OutcomeProcessingResult(
+                        outcome=outcome_res.outcome,
+                        disposition=RecoveryLoopDisposition.ESCALATE,
+                        case_status=updated_case.status,
+                        re_evaluation_id=context.re_evaluation_id,
+                        termination_reason=LoopTerminationReason.HUMAN_ESCALATION_REQUIRED,
+                        cycle_number=cycle_number,
+                        provenance=outcome_res.provenance,
+                    )
+                elif (
+                    policy_decision.policy_outcome == PolicyOutcome.ALLOW
+                    and decision.selected_action is not None
+                ):
+                    action_type_val = decision.selected_action.value
+                    domain_action_type = (
+                        RecoveryActionType.ALTERNATE_RECOVERY
+                        if action_type_val == "PAYMENT_LINK"
+                        else (
+                            RecoveryActionType(action_type_val)
+                            if action_type_val in [e.value for e in RecoveryActionType]
+                            else RecoveryActionType.RETRY
+                        )
+                    )
+                    # Check consecutive same-action repetition limit
+                    can_repeat = self.safety_guard.check_same_action_repetition(
+                        proposed_action=domain_action_type,
+                        history=history,
+                    )
+                    if not can_repeat:
+                        # Guardrail 3 & 11: Safety guard rejects immediate
+                        # consecutive repetition
+                        can_execute = False
+                        if updated_case.status == RecoveryCaseStatus.POLICY_CHECK:
+                            updated_case = transition_recovery_case(
+                                case=updated_case,
+                                payment=updated_payment,
+                                new_status=RecoveryCaseStatus.STOPPED,
+                                now=current_time,
+                            )
+                        outcome_res = OutcomeProcessingResult(
+                            outcome=outcome_res.outcome,
+                            disposition=RecoveryLoopDisposition.STOP,
+                            case_status=updated_case.status,
+                            re_evaluation_id=context.re_evaluation_id,
+                            termination_reason=LoopTerminationReason.SAME_ACTION_LIMIT_EXCEEDED,
+                            cycle_number=cycle_number,
+                            provenance=outcome_res.provenance,
+                        )
+                    else:
+                        can_execute = True
+
+                # If Policy ALLOWs and Safety Guard passes,
+                # advance case to ACTION_APPROVED and execute through Phase 11
+                exec_result: ExecutionResult | None = None
+                if can_execute and domain_action_type is not None:
+                    if updated_case.status == RecoveryCaseStatus.POLICY_CHECK:
+                        updated_case = transition_recovery_case(
+                            case=updated_case,
+                            payment=updated_payment,
+                            new_status=RecoveryCaseStatus.ACTION_APPROVED,
+                            now=current_time,
+                        )
+
+                    recovery_action = RecoveryAction(
+                        action_id=f"act_{updated_case.case_id[:8]}_{next_cycle}",
+                        case_id=updated_case.case_id,
+                        action_type=domain_action_type,
+                        status=RecoveryActionStatus.APPROVED,
+                        created_at=current_time,
+                        updated_at=current_time,
+                        execution_mode=execution_mode,
+                        parameters=execution_parameters
+                        or {"amount": updated_payment.amount},
+                    )
+                    if uow is not None:
+                        await uow.recovery_actions.save(recovery_action)
+
+                    # Execute through Phase 11 Execution Orchestrator
+                    exec_result = await execution_orchestrator.execute(
+                        policy_decision=policy_decision,
+                        recovery_action=recovery_action,
+                        recovery_case=updated_case,
+                        payment=updated_payment,
+                        execution_mode=execution_mode,
+                        current_time=current_time,
+                        parameters=execution_parameters
+                        or {"amount": updated_payment.amount},
+                        unit_of_work=uow,
+                    )
+                    if exec_result.status == ExecutionStatus.SUCCEEDED:
+                        executing_case = transition_recovery_case(
+                            case=updated_case,
+                            payment=updated_payment,
+                            new_status=RecoveryCaseStatus.EXECUTING,
+                            now=current_time,
+                        )
+                        updated_case = transition_recovery_case(
+                            case=executing_case,
+                            payment=updated_payment,
+                            new_status=RecoveryCaseStatus.OBSERVING,
+                            now=current_time,
+                        )
+
+                # Update outcome processing result with re_evaluation_id
                 updated_outcome_res = OutcomeProcessingResult(
                     outcome=outcome_res.outcome,
                     disposition=outcome_res.disposition,
@@ -204,218 +455,14 @@ class RecoveryLoopController:
                     cycle_number=cycle_number,
                     provenance=outcome_res.provenance,
                 )
+
                 res = AdaptiveCycleResult(
                     cycle_number=next_cycle,
                     re_evaluation_id=context.re_evaluation_id,
                     outcome_result=updated_outcome_res,
-                    decision=None,
-                    policy_decision=None,
-                    execution_result=None,
-                )
-                return res, updated_case, updated_payment
-
-            # Step 3: Diagnosis (Phase 7)
-            diag_result: DiagnosisResult | None = None
-            if diagnosis_provider is not None:
-                diag_result = diagnosis_provider(context.model_input)
-
-            # Step 4: Outcome Predictions (Phase 8)
-            predictions = predictions_provider(context.model_input, diag_result)
-
-            # Step 5: Economic Decision (Phase 9 - Sole Action Selection Authority)
-            decision: RecoveryDecision = decision_engine.decide(
-                model_input=context.model_input,
-                diagnosis_result=diag_result,
-                outcome_predictions=predictions,
-                recovery_case_id=updated_case.case_id,
-            )
-
-            # Advance case through state machine for decision cycle
-            if updated_case.status == RecoveryCaseStatus.EVALUATING:
-                updated_case = transition_recovery_case(
-                    case=updated_case,
-                    payment=updated_payment,
-                    new_status=RecoveryCaseStatus.DECISION_PENDING,
-                    now=current_time,
-                )
-                updated_case = transition_recovery_case(
-                    case=updated_case,
-                    payment=updated_payment,
-                    new_status=RecoveryCaseStatus.POLICY_CHECK,
-                    now=current_time,
-                )
-
-            # Step 6: Policy & Safety Governance (Phase 10 - Authorization Authority)
-            policy_history = self.history_service.build_policy_execution_history(
-                history
-            )
-            policy_decision, _trace = policy_engine.evaluate(
-                decision=decision,
-                payment=updated_payment,
-                case=updated_case,
-                current_time=current_time,
-                history=policy_history,
-                event_trust=EventTrustState.TRUSTED,
-            )
-
-            # Step 7: Enforce No-Blind-Repetition & Loop Bounds Safety Guard
-            domain_action_type: RecoveryActionType | None = None
-            can_execute = False
-
-            if policy_decision.policy_outcome == PolicyOutcome.BLOCK:
-                if updated_case.status == RecoveryCaseStatus.POLICY_CHECK:
-                    updated_case = transition_recovery_case(
-                        case=updated_case,
-                        payment=updated_payment,
-                        new_status=RecoveryCaseStatus.STOPPED,
-                        now=current_time,
-                    )
-                term_reason = LoopTerminationReason.POLICY_BLOCKED
-                if (
-                    policy_decision.reason_code
-                    == PolicyReasonCode.MAX_SAME_ACTION_REPETITIONS_REACHED
-                    or "SAME_ACTION" in str(policy_decision.reason_code)
-                    or "RETRY" in str(policy_decision.reason_code)
-                ):
-                    term_reason = LoopTerminationReason.SAME_ACTION_LIMIT_EXCEEDED
-                outcome_res = OutcomeProcessingResult(
-                    outcome=outcome_res.outcome,
-                    disposition=RecoveryLoopDisposition.STOP,
-                    case_status=updated_case.status,
-                    re_evaluation_id=context.re_evaluation_id,
-                    termination_reason=term_reason,
-                    cycle_number=cycle_number,
-                    provenance=outcome_res.provenance,
-                )
-            elif policy_decision.policy_outcome == PolicyOutcome.REQUIRE_HUMAN_APPROVAL:
-                if updated_case.status == RecoveryCaseStatus.POLICY_CHECK:
-                    updated_case = transition_recovery_case(
-                        case=updated_case,
-                        payment=updated_payment,
-                        new_status=RecoveryCaseStatus.ESCALATED,
-                        now=current_time,
-                    )
-                outcome_res = OutcomeProcessingResult(
-                    outcome=outcome_res.outcome,
-                    disposition=RecoveryLoopDisposition.ESCALATE,
-                    case_status=updated_case.status,
-                    re_evaluation_id=context.re_evaluation_id,
-                    termination_reason=LoopTerminationReason.HUMAN_ESCALATION_REQUIRED,
-                    cycle_number=cycle_number,
-                    provenance=outcome_res.provenance,
-                )
-            elif (
-                policy_decision.policy_outcome == PolicyOutcome.ALLOW
-                and decision.selected_action is not None
-            ):
-                action_type_val = decision.selected_action.value
-                domain_action_type = (
-                    RecoveryActionType.ALTERNATE_RECOVERY
-                    if action_type_val == "PAYMENT_LINK"
-                    else (
-                        RecoveryActionType(action_type_val)
-                        if action_type_val in [e.value for e in RecoveryActionType]
-                        else RecoveryActionType.RETRY
-                    )
-                )
-                # Check consecutive same-action repetition limit
-                can_repeat = self.safety_guard.check_same_action_repetition(
-                    proposed_action=domain_action_type,
-                    history=history,
-                )
-                if not can_repeat:
-                    # Guardrail 3 & 11: Safety guard rejects immediate
-                    # consecutive repetition
-                    can_execute = False
-                    if updated_case.status == RecoveryCaseStatus.POLICY_CHECK:
-                        updated_case = transition_recovery_case(
-                            case=updated_case,
-                            payment=updated_payment,
-                            new_status=RecoveryCaseStatus.STOPPED,
-                            now=current_time,
-                        )
-                    outcome_res = OutcomeProcessingResult(
-                        outcome=outcome_res.outcome,
-                        disposition=RecoveryLoopDisposition.STOP,
-                        case_status=updated_case.status,
-                        re_evaluation_id=context.re_evaluation_id,
-                        termination_reason=LoopTerminationReason.SAME_ACTION_LIMIT_EXCEEDED,
-                        cycle_number=cycle_number,
-                        provenance=outcome_res.provenance,
-                    )
-                else:
-                    can_execute = True
-
-            # If Policy ALLOWs and Safety Guard passes, advance case to ACTION_APPROVED
-            # and execute through Phase 11
-            exec_result: ExecutionResult | None = None
-            if can_execute and domain_action_type is not None:
-                if updated_case.status == RecoveryCaseStatus.POLICY_CHECK:
-                    updated_case = transition_recovery_case(
-                        case=updated_case,
-                        payment=updated_payment,
-                        new_status=RecoveryCaseStatus.ACTION_APPROVED,
-                        now=current_time,
-                    )
-
-                recovery_action = RecoveryAction(
-                    action_id=f"act_{updated_case.case_id[:8]}_{next_cycle}",
-                    case_id=updated_case.case_id,
-                    action_type=domain_action_type,
-                    status=RecoveryActionStatus.APPROVED,
-                    created_at=current_time,
-                    updated_at=current_time,
-                    execution_mode=execution_mode,
-                    parameters=execution_parameters
-                    or {"amount": updated_payment.amount},
-                )
-                if uow is not None:
-                    await uow.recovery_actions.save(recovery_action)
-
-                # Execute through Phase 11 Execution Orchestrator
-                exec_result = await execution_orchestrator.execute(
+                    decision=decision,
                     policy_decision=policy_decision,
-                    recovery_action=recovery_action,
-                    recovery_case=updated_case,
-                    payment=updated_payment,
-                    execution_mode=execution_mode,
-                    current_time=current_time,
-                    parameters=execution_parameters
-                    or {"amount": updated_payment.amount},
-                    unit_of_work=uow,
+                    execution_result=exec_result,
                 )
-                if exec_result.status == ExecutionStatus.SUCCEEDED:
-                    executing_case = transition_recovery_case(
-                        case=updated_case,
-                        payment=updated_payment,
-                        new_status=RecoveryCaseStatus.EXECUTING,
-                        now=current_time,
-                    )
-                    updated_case = transition_recovery_case(
-                        case=executing_case,
-                        payment=updated_payment,
-                        new_status=RecoveryCaseStatus.OBSERVING,
-                        now=current_time,
-                    )
 
-            # Update outcome processing result with re_evaluation_id
-            updated_outcome_res = OutcomeProcessingResult(
-                outcome=outcome_res.outcome,
-                disposition=outcome_res.disposition,
-                case_status=updated_case.status,
-                re_evaluation_id=context.re_evaluation_id,
-                termination_reason=outcome_res.termination_reason,
-                cycle_number=cycle_number,
-                provenance=outcome_res.provenance,
-            )
-
-            res = AdaptiveCycleResult(
-                cycle_number=next_cycle,
-                re_evaluation_id=context.re_evaluation_id,
-                outcome_result=updated_outcome_res,
-                decision=decision,
-                policy_decision=policy_decision,
-                execution_result=exec_result,
-            )
-
-            return res, updated_case, updated_payment
+                return res, updated_case, updated_payment

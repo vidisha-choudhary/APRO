@@ -1,5 +1,6 @@
 """Outcome processor evaluating evidence and advancing case state in Phase 13."""
 
+import asyncio
 import hashlib
 import json
 import uuid
@@ -71,13 +72,16 @@ class OutcomeProcessor:
         disposition_resolver: DispositionResolver | None = None,
         history_service: ActionHistoryService | None = None,
         safety_guard: LoopSafetyGuard | None = None,
+        audit_service: Any | None = None,
     ) -> None:
         self.safety_guard = safety_guard or LoopSafetyGuard()
+        self.history_service = history_service or ActionHistoryService()
         self.disposition_resolver = disposition_resolver or DispositionResolver(
             self.safety_guard
         )
-        self.history_service = history_service or ActionHistoryService()
+        self.audit_service = audit_service
         self._in_memory_outcomes: dict[str, Outcome] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
     def _classify_outcome(
         self,
@@ -377,6 +381,10 @@ class OutcomeProcessor:
 
         # 8. Persist Outcome and Case (with idempotent concurrency handling)
         self._in_memory_outcomes[outcome_id] = outcome
+        if self.audit_service is not None:
+            await self.audit_service.record_outcome(
+                outcome, cycle_number=cycle_number, uow=uow
+            )
         if uow is not None:
             try:
                 await uow.outcomes.append(outcome)

@@ -19,6 +19,7 @@ from apro.diagnosis.classifiers import (
     MultinomialLogisticRegressionDiagnosisModel,
     RandomForestDiagnosisModel,
 )
+from apro.diagnosis.consumer import DiagnosisArtifactConsumer
 from apro.diagnosis.enums import (
     DIAGNOSIS_TAXONOMY_ORDER,
     DIAGNOSIS_TAXONOMY_VERSION,
@@ -70,6 +71,7 @@ __all__ = [
     "UncertaintyState",
     "DiagnosisAlgorithmType",
     # Models & Artifacts
+    "DiagnosisArtifactConsumer",
     "DiagnosisLabel",
     "DiagnosisResult",
     "DiagnosisModelArtifact",

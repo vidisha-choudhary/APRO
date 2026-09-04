@@ -45,8 +45,13 @@ class ExecutionOrchestrator:
     in-memory locking guarantees at-most-one dispatch for concurrent coroutines.
     """
 
-    def __init__(self, registry: ExecutorRegistry | None = None) -> None:
+    def __init__(
+        self,
+        registry: ExecutorRegistry | None = None,
+        audit_service: Any | None = None,
+    ) -> None:
         self.registry = registry or DEFAULT_EXECUTOR_REGISTRY
+        self.audit_service = audit_service
         self._in_memory_idempotency: dict[str, ExecutionResult] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._pre_gate_hook: Callable[[], Any] | None = None
@@ -255,6 +260,10 @@ class ExecutionOrchestrator:
         await unit_of_work.executions.save(
             current_execution, idempotency_key=request.idempotency_key
         )
+        if self.audit_service is not None:
+            await self.audit_service.record_execution_started(
+                current_execution, uow=unit_of_work
+            )
         await unit_of_work.flush()
 
         # Dispatch
@@ -278,6 +287,10 @@ class ExecutionOrchestrator:
         await unit_of_work.executions.save(
             current_execution, idempotency_key=request.idempotency_key
         )
+        if self.audit_service is not None:
+            await self.audit_service.record_execution_completed(
+                current_execution, uow=unit_of_work
+            )
         await unit_of_work.commit()
 
         return result

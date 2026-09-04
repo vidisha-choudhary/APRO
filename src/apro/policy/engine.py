@@ -81,9 +81,11 @@ class PolicyEngine:
         self,
         registry: PolicyRuleRegistry = DEFAULT_RULE_REGISTRY,
         default_config: PolicyConfig = DEFAULT_POLICY_CONFIG,
+        audit_service: Any | None = None,
     ) -> None:
         self._registry = registry
         self._default_config = default_config
+        self.audit_service = audit_service
 
     def evaluate(
         self,
@@ -349,7 +351,29 @@ class PolicyEngine:
             evaluation_latency_ms=latency_ms,
         )
 
+        if self.audit_service is not None and hasattr(
+            self.audit_service, "record_policy_decision_sync"
+        ):
+            self.audit_service.record_policy_decision_sync(
+                policy_decision=pol_dec,
+            )
+
         return pol_dec, trace
+
+    async def record_audit(
+        self,
+        policy_decision: PolicyDecision | Any,
+        cycle_number: int = 1,
+        uow: Any | None = None,
+    ) -> Any | None:
+        """Record policy decision audit event via configured AuditService."""
+        if self.audit_service is None:
+            return None
+        return await self.audit_service.record_policy_decision(
+            policy_decision=policy_decision,
+            cycle_number=cycle_number,
+            uow=uow,
+        )
 
 
 __all__ = [
