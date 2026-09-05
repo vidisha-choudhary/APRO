@@ -40,7 +40,9 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["T201", "E501"]
+"scripts/run_phase_17_acceptance.py" = ["E402"]
 "tests/*" = ["E501"]
+"src/apro/adversarial/*" = ["E501"]
 "src/apro/dashboard/router.py" = ["B008"]
 
 [tool.mypy]

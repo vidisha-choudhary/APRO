@@ -40,8 +40,7 @@ SIMULATOR_LATENT_KEYS = (
 )
 
 SECRET_PATTERNS = [
-    re.compile(r"sentinel_phase14_secret_[a-zA-Z0-9_]+", re.IGNORECASE),
-    re.compile(r"sentinel_[a-zA-Z0-9_]+_secret_[a-zA-Z0-9_]+", re.IGNORECASE),
+    re.compile(r"sentinel_[a-zA-Z0-9_]+", re.IGNORECASE),
     re.compile(r"Bearer\s+[a-zA-Z0-9\-_.]+", re.IGNORECASE),
     re.compile(r"Basic\s+[a-zA-Z0-9=+/]+", re.IGNORECASE),
     re.compile(r"postgresql(\+[a-z0-9]+)?://[^:]+:([^@]+)@", re.IGNORECASE),
