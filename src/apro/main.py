@@ -5,8 +5,10 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from apro.config import settings
+from apro.dashboard import dashboard_router
 from apro.persistence.database import get_async_engine, get_session_factory
 from apro.webhooks.razorpay import router as razorpay_router
 
@@ -48,8 +50,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Include webhook routers
+# Scoped CORS for local frontend development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+# Include application routers
 app.include_router(razorpay_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/health")

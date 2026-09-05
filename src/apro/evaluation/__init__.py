@@ -92,7 +92,10 @@ from apro.evaluation.models import (
     SafetyKPISet,
     StatisticalSummary,
 )
-from apro.evaluation.persistence import EvaluationArtifactStore
+from apro.evaluation.persistence import (
+    EvaluationArtifactStore,
+    PostgreSQLEvaluationArtifactStore,
+)
 from apro.evaluation.report import (
     compute_report_hash,
     generate_json_report,
@@ -168,6 +171,7 @@ __all__ = [
     "OfflineEvaluationTruth",
     "OracleUpperBoundBaseline",
     "PaymentLinkBaseline",
+    "PostgreSQLEvaluationArtifactStore",
     "PredictionQualitySummary",
     "PrimaryKPISet",
     "ReportGenerationError",

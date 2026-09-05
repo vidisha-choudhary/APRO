@@ -337,6 +337,15 @@ class RecoveryCaseRepository:
         await self._session.flush()
         return recovery_case_to_domain(orm)
 
+    async def find_all(self, limit: int = 1000) -> list[RecoveryCase]:
+        stmt = (
+            select(RecoveryCaseModel)
+            .order_by(RecoveryCaseModel.opened_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [recovery_case_to_domain(row) for row in result.scalars()]
+
 
 class RecoveryActionRepository:
     """Repository for RecoveryAction persistence."""

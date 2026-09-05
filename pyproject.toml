@@ -39,7 +39,9 @@ select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "T20", "RET", "SIM", "ARG"]
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/*" = ["T201"]
+"scripts/*" = ["T201", "E501"]
+"tests/*" = ["E501"]
+"src/apro/dashboard/router.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -48,3 +50,6 @@ ignore_missing_imports = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_any_generics = true
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]

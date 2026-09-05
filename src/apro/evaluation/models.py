@@ -319,3 +319,10 @@ class BenchmarkReport(BaseModel):
     cohort_breakdowns: dict[str, list[CohortBreakdown]] = Field(default_factory=dict)
     limitations: list[str] = Field(default_factory=list)
     reproducibility_metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def report_hash(self) -> str:
+        """Deterministic SHA-256 hash of the report content."""
+        from apro.evaluation.report import compute_report_hash
+
+        return compute_report_hash(self)

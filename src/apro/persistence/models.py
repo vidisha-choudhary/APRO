@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -394,4 +395,35 @@ def _prevent_audit_event_delete(_mapper: Any, _connection: Any, target: Any) -> 
     ev_id = getattr(target, "audit_event_id", "")
     raise AuditImmutabilityError(
         f"AuditEventModel {ev_id} is immutable and cannot be deleted."
+    )
+
+
+class EvaluationBenchmarkReportModel(Base):
+    """Durable evaluation-plane benchmark report ORM model."""
+
+    __tablename__ = "evaluation_benchmark_reports"
+
+    report_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    benchmark_run_id: Mapped[str] = mapped_column(
+        String(128), unique=True, index=True, nullable=False
+    )
+    dataset_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    dataset_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evaluation_config_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    metric_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    code_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    bootstrap_seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    bootstrap_iterations: Mapped[int] = mapped_column(Integer, nullable=False)
+    report_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    recovery_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    gross_recovered_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    net_recovered_revenue: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_intervention_cost: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    is_synthetic_demo: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    report_payload: Mapped[dict[str, Any]] = mapped_column(JSONB_TYPE, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
     )
