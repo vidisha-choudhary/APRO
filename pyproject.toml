@@ -5,10 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "apro"
 version = "0.1.0"
-description = "Adaptive Payment Recovery Orchestrator (APRO) — Engineering Foundation"
+description = "Adaptive Payment Recovery Orchestrator (APRO) — Policy-guarded adaptive payment recovery system"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
 dependencies = [
     "fastapi>=0.111.0",
     "uvicorn>=0.30.0",
